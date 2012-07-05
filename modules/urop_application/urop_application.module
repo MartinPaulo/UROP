@@ -1,0 +1,785 @@
+<?php
+  /**
+   * Author: Martin Paulo
+   *
+   * This file is UROP's student application module.
+   *
+   * UROP's student application module is free software: you can redistribute it and/or modify
+   * it under the terms of the GNU General Public License as published by
+   * the Free Software Foundation, either version 3 of the License, or
+   * (at your option) any later version.
+   *
+   * UROP's student application module is distributed in the hope that it will be useful,
+   * but WITHOUT ANY WARRANTY; without even the implied warranty of
+   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   * GNU General Public License for more details.
+   *
+   * You should have received a copy of the GNU General Public License
+   * along with UROP's student application module.  If not, see <http://www.gnu.org/licenses/>.
+   */
+
+  const UROP_ROUND_OPEN = 'urop_round_open';
+  const UROP_ROUND_YEAR = 'urop_round_year';
+  const UROP_ROUND_NUMBER = 'urop_round_number';
+  const UROP_MINIMUM_DISK_FREE = 'urop_minimun_disk_free';
+  const UROP_STUDENT_TABLE = 'urop_students';
+  const UROP_STUDENT_TABLE_KEY = 'uid';
+  const UROP_HOME_URL = 'urop/';
+
+  const DISABLED_MESSAGE = "<p><i>(Disabled either because you have submitted an application or the round is closed)</i></p>";
+
+  /**
+   * The status for the student has never beens set...
+   */
+  const UROP_APPLICANT_STATUS_UNSET = "";
+  /**
+   * The applicant is new to the urop program.
+   */
+  const UROP_APPLICANT_NEW = "new";
+  /**
+   * The applicant has made a prior application to the urop program.
+   */
+  const UROP_APPLICANT_PRIOR = "prior";
+  /**
+   * The applicant has completed their submission.
+   */
+  const UROP_APPLICANT_SUBMITTER = "applicant";
+  /**
+   * The applicant has been rejected.
+   */
+  const UROP_APPLICANT_REJECTED = "rejected";
+  /**
+   * The applicant has made it through to the interview stage of the program.
+   */
+  const UROP_APPLICANT_INTERVIEWEE = "interview";
+  /**
+   * The applicant has been placed and is a current UROP student.
+   */
+  const UROP_APPLICANT_CURRENT = "current";
+  /**
+   * The applicant is now graduated and finished with the UROP program.
+   */
+  const UROP_APPLICANT_GRADUATE = "graduate";
+
+  function _urop_show_node($node_id) {
+    return node_view(node_load($node_id));
+  }
+
+  function _urop_show_new_user_instructions() {
+    return _urop_show_node(variable_get('urop_new_applicant', '1'));
+  }
+
+  function _urop_show_past_member_instructions() {
+    return _urop_show_node(variable_get('urop_past_member', '2'));
+  }
+
+  // This function defines the URL to the page created etc.
+  // See http&#58;//api.drupal.org/api/function/hook_menu/6
+  function urop_application_menu() {
+    watchdog('UROP', "Menu was called");
+    //$node = node_load(array('nid'=>'1'));
+    //path_set_alias('node/' . $node->nid, 'urop', isset($node->pid) ? $node->pid : NULL, isset($node->language) ? $node->language : '');
+    //path_set_alias('/node/1', '/uorp/%user');
+    $items = array();
+    $items['urop'] = array(
+      'title' => 'Home page',
+      'page callback' => '_urop_show_new_user_instructions',
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+    );
+    //path_set_alias('node/' . $node->nid, 'urop/%user_uid_optional', isset($node->pid) ? $node->pid : NULL, isset($node->language) ? $node->language : '');
+    $items['urop/%user_uid_optional'] = urop_application_menu_main();
+    $items['urop/%user_uid_optional/personal'] = urop_application_menu_personal();
+    $items['urop/%user_uid_optional/university'] = urop_application_menu_university();
+    $items['urop/%user_uid_optional/documents'] = urop_application_menu_documents();
+    $items['urop/%user_uid_optional/post_urop'] = urop_application_menu_post_urop();
+    $items['urop/%user_uid_optional/post_urop/project'] = urop_application_menu_project();
+    $items['urop/%user_uid_optional/post_urop/degrees'] = urop_application_menu_degrees();
+    $items['urop/%user_uid_optional/post_urop/prizes'] = urop_application_menu_prizes();
+    $items['urop/%user_uid_optional/post_urop/pathway'] = urop_application_menu_pathway();
+    $items['urop/%user_uid_optional/post_urop/medical'] = urop_application_menu_medical();
+    $items['urop/%user_uid_optional/post_urop/feedback'] = urop_application_menu_feedback();
+    $items['urop/%user_uid_optional/submit'] = urop_get_submit_menu_item();
+    $items['urop/%user_uid_optional/admin'] = array(
+      'title' => 'UROP admin',
+      'page arguments' => array(1),
+      'page callback' => 'urop_form_accept_reject',
+      'description' => 'Accept or reject the applicant...',
+      'access arguments' => array('administer urop'),
+      'file' => '/admin/urop_change_state.inc',
+      'type' => MENU_NORMAL_ITEM,
+      'weight' => 8,
+    );
+    $items['supervisor/%user_uid_optional'] = array(
+      'title' => 'UROP supervisor',
+      'page callback' => 'urop_build_supervisor_form',
+      'page arguments' => array(1),
+      'description' => 'This is where UROP supervisors manage their records',
+      'access arguments' => array('supervisor'),
+      'file' => '/supervisors/urop_supervisor.inc',
+      'type' => MENU_NORMAL_ITEM,
+      'weight' => 0,
+    );
+    $items['admin/urop'] = array(
+      'title' => 'UROP admin',
+      'page callback' => 'urop_admin',
+      'description' => 'This is where UROP application settings are managed',
+      'access arguments' => array('administer urop'),
+      'file' => '/admin/urop_admin_pane.inc',
+      'type' => MENU_NORMAL_ITEM,
+      'weight' => 0,
+    );
+    // following are call backs for autocomplete drop downs.
+    $items['urop/autocomplete/uni'] = array(
+      'page callback' => '_urop_university_list',
+      'access arguments' => array(1),
+      'access callback' => '_urop_is_visible_to_user',
+      'type' => MENU_CALLBACK,
+    );
+    return $items;
+  }
+
+  function urop_get_submit_menu_item() {
+    $result = urop_application_get_menu_blank();
+    $result['title'] = 'UROP submission';
+    $result['page callback'] = 'urop_form_submission';
+    $result['description'] = 'The final step in the application process: a submission';
+    $result['access arguments'] = array(1);
+    $result['access callback'] = '_urop_access_submit_menu';
+    $result['file'] = '/admin/urop_submission.inc';
+    $result['type'] = MENU_CALLBACK;
+    $result['weight'] = 8;
+    return $result;
+  }
+
+  function _urop_access_submit_menu($user_from_url) {
+    return _urop_is_visible_to_user($user_from_url) && urop_application_is_ready($user_from_url->uid);
+  }
+
+  /**
+   * hook_perm() implementation
+   */
+  function urop_application_perm() {
+    return array('administer urop', 'supervisor');
+  }
+
+  /**
+   * Implementation of hook_views_api().
+   */
+  function urop_application_views_api() {
+    return array(
+      'api' => 2,
+    );
+  }
+
+  function urop_application_get_menu_blank() {
+    return array('title' => '',
+      'page callback' => '',
+      'page arguments' => array(1),
+      'description' => '',
+      'access arguments' => array(1),
+      'access callback' => '_urop_is_visible_to_user',
+      'file' => '',
+      'type' => MENU_NORMAL_ITEM,
+      'weight' => 1,
+    );
+  }
+
+  function urop_application_menu_padded($title, $page_call_back, $description, $file = '', $weight = 0) {
+    $result = urop_application_get_menu_blank();
+    $result['title'] = $title;
+    $result['page callback'] = $page_call_back;
+    $result['description'] = $description;
+    $result['file'] = $file;
+    $result['weight'] = $weight;
+    return $result;
+  }
+
+  function urop_application_menu_main() {
+    return urop_application_menu_padded(
+      'My applications',
+      '_urop_show_new_user_instructions',
+      'Your application details');
+  }
+
+  function urop_application_menu_personal() {
+    return urop_application_menu_padded(
+      'Personal details',
+      'urop_application_form',
+      'Personal details',
+      'personal_details.inc',
+      1);
+  }
+
+  function urop_application_menu_university() {
+    return urop_application_menu_padded(
+      'University details',
+      'urop_university_form',
+      'University details',
+      'urop_university_details.inc',
+      2);
+  }
+
+  function urop_application_menu_documents() {
+    return urop_application_menu_padded(
+      'Supporting documents',
+      'urop_application_documents_form',
+      'Supporting documents',
+      'application_documents.inc',
+      3);
+  }
+
+  function urop_application_menu_post_urop() {
+    $result = urop_application_menu_padded(
+      'Education/Career details',
+      '_urop_show_past_member_instructions',
+      'Your life after UROP',
+      '',
+      4);
+    $result['access callback'] = '_urop_is_visible_to_past_member';
+    return $result;
+  }
+
+  function urop_application_menu_project() {
+    $result = urop_application_menu_padded(
+      'UROP project description',
+      'urop_form_project', // TBD
+      'Your UROP placement description',
+      '/project/urop_project.inc', //TBD
+      1);
+    $result['access callback'] = '_urop_is_visible_to_past_member';
+    return $result;
+  }
+
+  function urop_application_menu_degrees() {
+    $result = urop_application_menu_padded(
+      'Qualifications/Degrees',
+      'urop_university_form', // TBD
+      'Any qualifications/degrees you have achieved subsequent to UROP',
+      '/university/urop_university.inc', //TBD
+      2);
+    $result['access callback'] = '_urop_is_visible_to_past_member';
+    return $result;
+  }
+
+  function urop_application_menu_prizes() {
+    $result = urop_application_menu_padded(
+      'Awards/Achievements',
+      'urop_awards',
+      'Any awards received after leaving the UROP program',
+      '/awards/urop_awards.inc',
+      3);
+    $result['access callback'] = '_urop_is_visible_to_past_member';
+    return $result;
+  }
+
+  function urop_application_menu_pathway() {
+    $result = urop_application_menu_padded(
+      'Post graduate pathway',
+      'urop_pathways',
+      'The path followed after completion of your degrees',
+      '/pathway/urop_a_pathway.inc',
+      4);
+    $result['access callback'] = '_urop_is_visible_to_past_member';
+    return $result;
+  }
+
+  function urop_application_menu_medical() {
+    $result = urop_application_menu_padded(
+      'Medical doctors',
+      'urop_form_medical',
+      'Medical doctor? If so, please complete',
+      'doctors/urop_doctors.inc',
+      5);
+    $result['access callback'] = '_urop_is_visible_to_past_member';
+    return $result;
+  }
+
+  function urop_application_menu_feedback() {
+    $result = urop_application_menu_padded(
+      'Feedback',
+      'urop_form_feedback',
+      'Feedback on the UROP program',
+      'feedback/urop_feedback.inc',
+      6);
+    $result['access callback'] = '_urop_is_visible_to_past_member';
+    return $result;
+  }
+
+  function urop_application_main($user = NULL) {
+    $result = '';
+    if ($user && ($user->uid != 0)) {
+      $result .= '<p>' . t('Welcome @user!', array('@user' => $user->name));
+      if (user_access('administer urop')) {
+        $result .= '<p>You have administrative priviledges.';
+        $result .= '<p>Use them with care!';
+      }
+      else {
+        if (!_urop_is_visible_to_past_member($user->uid)) {
+          $result .= '<p>In order to make an application you still need to:';
+          $result .= '<ul>';
+          $up_to_date = urop_application_is_ready($user->uid);
+          if (!$up_to_date) {
+            if (urop_application_is_personal_information_needed($user->uid)) {
+              // we depend on the menu system rewriting this URL for the currently logged on user.
+              // if we preface the url with a '/' then the rewriting doesn't occur...
+              $result .= '<li>provide your <a href="' . url('urop') . '/' . $user->uid . '/personal">personal details</a>.</li>';
+            }
+            if (urop_application_is_university_information_needed($user->uid)) {
+              // we depend on the menu system rewriting this URL for the currently logged on user. See notes above
+              $result .= '<li>provide your <a href="' . url('urop') . '/' . $user->uid . '/university">university details</a>.</li>';
+            }
+            if (urop_application_is_documentation_needed($user->uid)) {
+              // we depend on the menu system rewriting this URL for the currently logged on user. See notes above
+              $result .= '<li>provide your <a href="' . url('urop') . '/' . $user->uid . '/documents">supporting documentation</a>.</li>';
+            }
+          }
+          else {
+            if (urop_application_is_ready($user->uid)) {
+              $result .= '<li><a href="' . url('urop') . '/' . $user->uid . '/submit">submit your application</a>!</li>';
+            }
+            else {
+              $result .= '<li>do nothing - you have provided all the information required!</li>';
+            }
+          }
+          $result .= '</ul>';
+        }
+      }
+    }
+    else {
+      $result .= "<p>In order to make an application you need to create an account or log in.</p>";
+    }
+    $result .= _urop_form_footer();
+    return $result;
+  }
+
+  function urop_application_is_personal_information_needed($user_uid) {
+    // TODO: consider caching, as is hit often, but remember that $user_uid might be different for each call, as admin
+    // might be doing stuff...
+    $personal_info_needed = TRUE; // be optimistic
+    $sql = "SELECT * from {urop_students} WHERE uid = '%d'";
+    $record = db_fetch_object(db_query(db_rewrite_sql($sql), $user_uid));
+    if ($record) {
+      if (strlen($record->family_name) > 0) {
+        $personal_info_needed = FALSE;
+      }
+    }
+    return $personal_info_needed;
+  }
+
+  function urop_application_is_university_information_needed($user_uid) {
+    // TODO: consider caching, as is hit often, but remember that $user_uid might be different for each call, as admin
+    // might be doing stuff...
+    $sql = "SELECT COUNT(*) from {urop_results} WHERE uid = '%d'";
+    $count = db_result(db_query($sql, $user_uid));
+    return ($count <= 0);
+  }
+
+  function urop_application_is_documentation_needed($user_uid) {
+    // TODO: consider caching, as is hit often, but remember that $user_uid might be different for each call, as admin
+    // might be doing stuff...
+    $source_dir = file_directory_path() . '/' . $user_uid . '/' . _urop_get_current_round_tag();
+    $files = file_scan_directory($source_dir, '.*', array('pdf', 'txt', 'doc', 'docx', 'odf', 'odt', 'jpg', 'jpeg', 'png', 'gif'), 0, TRUE, 'filename');
+    $file_count = 0;
+    foreach ($files as $file) {
+      $file_count = $file_count + 1;
+    }
+    return $file_count < 4;
+  }
+
+  function urop_application_is_ready($user_uid) {
+    if (!urop_is_student_of_status($user_uid, UROP_APPLICANT_NEW, UROP_APPLICANT_PRIOR, UROP_APPLICANT_STATUS_UNSET)) {
+      return FALSE;
+    }
+    return !(
+      urop_application_is_personal_information_needed($user_uid)
+        || urop_application_is_university_information_needed($user_uid)
+        || urop_application_is_documentation_needed($user_uid)
+    );
+  }
+
+  /**
+   * Checks to see if the user can edit their application.
+   * If the currently logged on user is an admin, they can always edit an application at any time.
+   * If the round is closed no one can edit the application.
+   * If the round is open and the user is a new/prior applicant then they can edit it. Otherwise, no one can.
+   * Clear?
+   * @param string $user_uid The user id whom we are checking against.
+   * @return bool TRUE if the application is not editable, FALSE if it is.
+   */
+  function urop_application_not_editable($user_uid) {
+    // if user is admin, then they can edit anyone at anytime
+    if (user_access('administer urop')) {
+      return FALSE;
+    }
+    if (urop_is_round_closed()) {
+      return TRUE;
+    }
+    if (!urop_is_student_of_status($user_uid, UROP_APPLICANT_NEW, UROP_APPLICANT_PRIOR, UROP_APPLICANT_STATUS_UNSET)) {
+      return TRUE;
+    }
+    return FALSE;
+  }
+
+  /**
+   * @return bool TRUE if the round is currently closed, FALSE if it is open
+   */
+  function urop_is_round_closed() {
+    return variable_get(UROP_ROUND_OPEN, 0) === 0;
+  }
+
+
+  /**
+   * @param user $user_from_url The user loaded from the path in the url.
+   * @return boolean True if the current user can access the resource, False if not.
+   */
+  function _urop_is_visible_to_user($user_from_url) {
+    global $user; // the logged in user.
+    // user must be logged in
+    if (!user_is_logged_in()) {
+      return FALSE;
+    }
+    // if user is admin, then they can view anyone
+    if (user_access('administer urop')) {
+      return TRUE;
+    }
+    // otherwise, user record being accessed must be for the current user
+    return $user->uid == $user_from_url->uid;
+  }
+
+  /**
+   * @param user $user_from_url The user loaded from the path in the url.
+   * @return boolean True if the current user can access the past member resources, False if not.
+   */
+  function _urop_is_visible_to_past_member($user_from_url) {
+    if (_urop_is_visible_to_user($user_from_url)) {
+      // we know now that the user is logged on and is either the admin user or trying to fecth their own record.
+      // if user is admin, then they can view anyone
+      if (user_access('administer urop')) {
+        return TRUE;
+      }
+      // otherwise they have to be a past member...
+      return urop_is_student_of_status($user_from_url->uid, UROP_APPLICANT_GRADUATE);
+    }
+    return FALSE;
+  }
+
+  /**
+   * Warning: implicit arguments: user->uid, then a list of statust that will be iterated accross.
+   * @return bool
+   */
+  function urop_is_student_of_status() {
+    $args = func_get_args();
+    // TODO: check that the arguments are as expected.
+    $student = urop_get_student_status($args[0]);
+    for ($i = 1; $i < func_num_args(); $i++) {
+      if ($args[$i] == $student->status) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  function urop_get_student_status($user_uid) {
+    $table = UROP_STUDENT_TABLE;
+    $sql = "SELECT {uid, given_name, family_name, status} from {$table} WHERE uid = '%d'";
+    $student = db_fetch_object(db_query(db_rewrite_sql($sql), $user_uid));
+    return $student;
+  }
+
+  function _urop_get_current_round_info() {
+    $current_year = variable_get(UROP_ROUND_YEAR, "2011");
+    $current_round = variable_get(UROP_ROUND_NUMBER, "2");
+    return array($current_year, $current_round);
+  }
+
+  function _urop_get_current_round_tag() {
+    list($current_year, $current_round) = _urop_get_current_round_info();
+    return "$current_round-$current_year";
+  }
+
+  /**
+   * If /urop is set to be the home page, this method is called when the home
+   * page link is clicked on.
+   * If the user is not logged in it redirects to /node (the default)
+   * Otherwise it redirects to the page that the user would ordinarily be
+   * taken to when they log in.
+   */
+  function urop_application_home_page() {
+    $path = 'node';
+    if (user_is_logged_in()) {
+      $path = urop_application_get_login_destination();
+    }
+    drupal_goto($path);
+  }
+
+  /**
+   * Hook_user. We simply set the destination that the user will be redirected to
+   * once they have logged in.
+   * http://stackoverflow.com/questions/4438070/drupal-6-19-password-reset-redirect
+   */
+  function urop_application_user($op, &$edit, &$account, $category = NULL) {
+    // some subtlety: if this is a login, the $edit will be an array with the form values in it.
+    // if there are < 2 values ( name, password) then this is not a regular login.
+    // In which case, we  should probably not take the user to the regular login destination...
+    if ($op == "login" && 1 < count($edit)) {
+      $_REQUEST['destination'] = urop_application_get_login_destination();
+    }
+  }
+
+  /**
+   * Hook_form_alter. Looks to see if this is the user edit profile form, and if it is, and the user
+   * is not an administrator, ensures that the the user is redirected to the first page of the application
+   * forms. This is done so that newly registered users will be taken straight to the forms once they
+   * have changed their passwords.
+   * @param $form
+   * @param $form_state
+   * @param $form_id
+   */
+  function urop_application_form_alter(&$form, $form_state, $form_id) {
+    switch ($form_id) {
+      case 'user_profile_form':
+        global $user;
+        if (!user_access('administer urop') && !urop_application_is_ready($user->uid)) {
+          $form['#redirect'] = urop_application_get_login_destination();
+        }
+        break;
+    }
+  }
+
+  /**
+   * Hook_cron. Check that the disk size is not below a certain limit.
+   */
+  function urop_application_cron() {
+    $df = disk_free_space("/");
+    $minimum_disk_free = variable_get(UROP_MINIMUM_DISK_FREE, 100);
+    if ($df / 1048576 < $minimum_disk_free) {
+      $params['disk_space'] = urop_format_size($df);
+      $mail_to = variable_get('urop_feedback_email', 'urop-bio21@unimelb.edu.au');
+      drupal_mail('urop_disk_space', 'urop_disk_space', $mail_to, language_default(), $params);
+    }
+  }
+
+  function urop_disk_space_mail($key, &$message, $params) {
+    $message['subject'] = t('Warning: Server Disk Space Low!');
+    $message['body'][] = t('The server disk space is low!. It is: ') . $params['disk_space'];
+  }
+
+  function urop_format_size($size) {
+    switch (true) {
+      case ($size > 1099511627776):
+        $size /= 1099511627776;
+        $suffix = 'TB';
+        break;
+      case ($size > 1073741824):
+        $size /= 1073741824;
+        $suffix = 'GB';
+        break;
+      case ($size > 1048576):
+        $size /= 1048576;
+        $suffix = 'MB';
+        break;
+      case ($size > 1024):
+        $size /= 1024;
+        $suffix = 'KB';
+        break;
+      default:
+        $suffix = 'B';
+    }
+    return round($size, 2) . ' ' . $suffix;
+  }
+
+  /**
+   * Returns the path that the user should go to when they log in.
+   */
+  function urop_application_get_login_destination() {
+    if (user_access('administer urop')) {
+      $path = '/admin/urop'; # admin area
+    }
+    else {
+      global $user;
+      $path = 'urop/' . $user->uid; # urop form overview
+    }
+    return $path;
+  }
+
+  // http://drupal.org/node/165104  (workflow diagram)
+  // http://www.akchauhan.com/create-drupal-form-elements-like-date-element/
+  // http://drupal.org/node/37862   (adding a custom element and expanding it)
+  // http://drupal.org/node/169815
+  // http://drupal.org/project/elements
+  // http://www.jaypan.com/blog/themeing-drupal-6-forms-tables-checkboxes
+  // http://drupal.org/node/48643   (#tree and #parents)
+  // http://drupal.org/node/751826
+  /**
+   * Need to share...
+   * And perhaps generate dynamically based on start year and current year?
+   */
+  function _urop_year_list() {
+    return drupal_map_assoc(range(1970, 2050));
+  }
+
+  function _urop_month_list() {
+    return array(
+      '1' => t('January'),
+      '2' => t('February'),
+      '3' => t('March'),
+      '4' => t('April'),
+      '5' => t('May'),
+      '6' => t('June'),
+      '7' => t('July'),
+      '8' => t('August'),
+      '9' => t('September'),
+      '10' => t('October'),
+      '11' => t('November'),
+      '12' => t('December'),
+    );
+  }
+
+  // http://www.australian-universities.com/list/
+  function _urop_universities() {
+    return array(
+      'ACU' => 'Australian Catholic University',
+      'DEAKIN' => 'Deakin University',
+      'LATROBE' => 'La Trobe University',
+      'MONASH' => 'Monash University',
+      'RMIT' => 'RMIT University',
+      'SWINBURNE' => 'Swinburne University of Technology',
+      'BALLARAT' => 'University of Ballarat',
+      'MELBOURNE' => 'University of Melbourne',
+      'VU' => 'Victoria University',
+    );
+  }
+
+  function urop_application_get_list_of_states() {
+    return array(
+      'ACT' => 'Australian Capital Territory',
+      'NSW' => 'New South Wales',
+      'NT' => 'Northern Territory',
+      'QLD' => 'Queensland',
+      'SA' => 'South Australia',
+      'TAS' => 'Tasmania',
+      'VIC' => 'Victoria',
+      'WA' => 'Western Australia',
+      'JBT' => 'Jervis Bay Territory',
+    );
+  }
+
+  function _urop_university_list($string = '') {
+    $choices = _urop_universities();
+    $matches = array();
+    if ($string) {
+      foreach ($choices as $value) {
+        if (stristr($value, trim($string))) {
+          $matches[$value] = $value;
+        }
+      }
+    }
+    drupal_json($matches);
+  }
+
+  /**
+   * hook_block to return our block we have created.
+   */
+  function urop_application_block($op = 'list', $delta = 0, $edit = array()) {
+    if ($op == 'list') {
+      $blocks[0]['info'] = t('UROP Summary');
+    }
+    else {
+      $blocks['subject'] = t('UROP Summary');
+      $blocks['content'] = urop_application_main($GLOBALS['user']);
+    }
+    return $blocks;
+
+  }
+
+  /**
+   * hook_file_download() Only allow administrators to download files if private download is switched on
+   * the file directory should be outside of the web directory. However, if it must in side, your
+   *  your .htaccess should look like this:
+
+  ORDER DENY,ALLOW
+  DENY FROM ALL
+  ALLOW FROM XXX.XX.XX.XXX
+
+  where XXX.XX.XX.XXX is your web server's IP
+
+   */
+  function urop_application_file_download($file) {
+    if (user_access('administer urop')) {
+      $mime = file_get_mimetype($file);
+      return array('Content-type: ' . $mime);
+    }
+    return -1;
+  }
+
+  function _urop_fieldset($description) {
+    return array(
+      '#type' => 'fieldset',
+      '#title' => t($description),
+    );
+  }
+
+  function _urop_edit_box($description) {
+    return array(
+      '#type' => 'textfield',
+      '#title' => t($description),
+      '#size' => 50,
+      '#maxlength' => 50,
+    );
+  }
+
+  function _urop_text_area($description) {
+    return array(
+      '#type' => 'textarea',
+      '#title' => t($description),
+    );
+  }
+
+  function _urop_user_value($user_uid) {
+    return array(
+      "#type" => 'value',
+      "#value" => $user_uid,
+    );
+  }
+
+  function _urop_submit() {
+    return array(
+      '#prefix' => '<div class="form_submit">',
+      '#suffix' => '</div>',
+      '#type' => 'submit',
+      '#value' => 'Submit',
+    );
+  }
+
+  function _urop_form_footer() {
+    $contact_email = variable_get('urop_contact_email', 'help@urop.edu.au');
+    return '<div class="contact">' . t('If you have any questions, send an e-mail to: <a href="mailto:@email">@email</a></div>',
+      array('@email' => $contact_email));
+  }
+
+  function urop_is_valid_phone($number) {
+    // need to work out a good regular expression for this...
+    // that actually helps explain why the phone number entered is wrong...
+    $j = mb_strlen($number);
+    for ($k = 0; $k < $j; $k++) {
+      $char = mb_substr($number, $k, 1);
+      if (ctype_digit($char)) {
+        continue;
+      }
+      elseif ($char == '(') {
+        continue;
+      }
+      elseif ($char == ')') {
+        continue;
+      }
+      elseif ($char == ' ') {
+        continue;
+      }
+      elseif ($char == '+') {
+        continue;
+      }
+      return FALSE;
+    }
+    return TRUE;
+  }

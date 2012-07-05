@@ -1,0 +1,38 @@
+<?php
+  /**
+   * @file
+   * This file contains a menu item that allows a one time import of data from the old system.
+   *
+   * Author: Martin Paulo
+   *
+   * This file is part of UROP's data import module.
+   *
+   * UROP's data import module is free software: you can redistribute it and/or modify
+   * it under the terms of the GNU General Public License as published by
+   * the Free Software Foundation, either version 3 of the License, or
+   * (at your option) any later version.
+   *
+   * UROP's data import module is distributed in the hope that it will be useful,
+   * but WITHOUT ANY WARRANTY; without even the implied warranty of
+   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   * GNU General Public License for more details.
+   *
+   * You should have received a copy of the GNU General Public License
+   * along with UROP's data import module.  If not, see <http://www.gnu.org/licenses/>.
+   */
+
+  /**
+   * hook_menu
+   */
+  function urop_import_menu() {
+    $items['admin/data'] = array(
+      'title' => 'UROP data import',
+      'page callback' => 'urop_form_import_data',
+      'description' => 'Import data from the old system...',
+      'access arguments' => array('administer urop'),
+      'file' => 'urop_import_data.inc',
+      'type' => MENU_NORMAL_ITEM,
+      'weight' => 0,
+    );
+    return $items;
+  }

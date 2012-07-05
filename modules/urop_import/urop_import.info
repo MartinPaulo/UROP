@@ -1,0 +1,4 @@
+name = UROP Import
+description = UROP Application data import module
+core = 6.x
+package = VeRSI provided

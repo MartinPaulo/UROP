@@ -1,0 +1,725 @@
+<?php
+  /**
+   * @file
+   * Install, update and uninstall functions for the urop_application module.
+   *
+   * Author: Martin Paulo
+   *
+   * This file is part of UROP's student application module.
+   *
+   * UROP's student application module is free software: you can redistribute it and/or modify
+   * it under the terms of the GNU General Public License as published by
+   * the Free Software Foundation, either version 3 of the License, or
+   * (at your option) any later version.
+   *
+   * UROP's student application module is distributed in the hope that it will be useful,
+   * but WITHOUT ANY WARRANTY; without even the implied warranty of
+   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   * GNU General Public License for more details.
+   *
+   * You should have received a copy of the GNU General Public License
+   * along with UROP's student application module.  If not, see <http://www.gnu.org/licenses/>.
+   */
+
+  /**
+   * hook_install()
+   */
+  function urop_application_install() {
+    variable_set(UROP_ROUND_OPEN, 0); // Default to a closed round...
+    drupal_install_schema('urop_application');
+    _urop_create_roles();
+    _urop_write_to_courses(t('Applied science'));
+    _urop_write_to_courses(t('Arts/Science'));
+    _urop_write_to_courses(t('Biomedical Engineering'));
+    _urop_write_to_courses(t('Biomedical Science'));
+    _urop_write_to_courses(t('Biomedicine'));
+    _urop_write_to_courses(t('Biotechnology with Honours (Monash)'));
+    _urop_write_to_courses(t('Commerce'));
+    _urop_write_to_courses(t('Commerce/IS'));
+    _urop_write_to_courses(t('Commerce/Science'));
+    _urop_write_to_courses(t('Law/Science'));
+    _urop_write_to_courses(t('Science'));
+  }
+
+  function _urop_write_to_courses($course_description) {
+    db_query("INSERT INTO {university_courses} (description) VALUES ('%s')",
+      $course_description);
+  }
+
+  /**
+   * hook_uninstall()
+   */
+  function urop_application_uninstall() {
+    drupal_uninstall_schema('urop_application');
+    _urop_remove_roles();
+    variable_del(UROP_ROUND_OPEN);
+    variable_del(UROP_ROUND_YEAR);
+    variable_del(UROP_ROUND_NUMBER);
+  }
+
+  /**
+   * hook_schema()
+   * have a look at:
+   * http://sachachua.com/blog/2009/04/drupal-staging-and-deployment-tips-its-all-code/
+   */
+  function urop_application_schema() {
+    // first we build the list of courses that we know of
+    $schema['university_courses'] = _urop_get_course_table();
+    // then build the tables that the new applicants will first be given.
+    $schema['urop_students'] = _urop_get_student_details_table();
+    $schema['urop_universities'] = _urop_get_student_university_table();
+    $schema['urop_results'] = _urop_get_results_table();
+    // finally the tables that past members will be able to complete.
+    $schema['urop_prizes'] = urop_application_get_student_prizes_table();
+    $schema['urop_publications'] = urop_application_get_student_publications_table();
+    $schema['urop_state_changes'] = _urop_get_state_changes_table();
+    $schema['urop_supervisors'] = _urop_get_supervisors_table();
+    $schema['urop_supervisors_students_join'] = _urop_get_supervisors_students_join_table();
+    return $schema;
+  }
+
+  function _urop_get_supervisors_students_join_table() {
+    return array(
+      'description' => t('The table of supervisor/student joins'),
+      'fields' => array(
+        'ssid' => array(
+          'description' => t('The primary identifier for supervisor/student join'),
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'student_uid' => array(
+          'description' => t('The {users}.uid associated with the student'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'supervisor_uid' => array(
+          'description' => t('The {users}.uid associated with the supervisor'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+      ),
+      'primary key' => array('ssid'),
+      'unique keys' => array(
+        'student_supervisor' => array('student_uid', 'supervisor_uid')
+      ),
+      'indexes' => array('students' => array('student_uid')),
+      // index on student_uid..
+    );
+  }
+
+  function _urop_get_supervisors_table() {
+    return array(
+      'description' => t('The table of supervisor details'),
+      'fields' => array(
+        'uid' => array(
+          'description' => t('The {users}.uid associated with this supervisor'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'family_name' => array(
+          'description' => t('The supervisors family name.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'given_name' => array(
+          'description' => t('The supervisors given name.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'position' => array(
+          'description' => t('The supervisors position.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'institution' => array(
+          'description' => t('The supervisors institution.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'laboratory' => array(
+          'description' => t('The supervisors laboratory.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'address_line_1' => array(
+          'description' => t('The first line of the supervisors contact address.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'address_line_2' => array(
+          'description' => t('The second line of the supervisors contact address.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'city' => array(
+          'description' => t('The city/suburb of the supervisors contact address.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'postcode' => array(
+          'description' => t('The postcode associated with the supervisors contact address.'),
+          'type' => 'varchar',
+          'length' => 5,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'state' => array(
+          'description' => t('The state of the supervisors contact address.'),
+          'type' => 'varchar',
+          'length' => 3,
+          'not null' => TRUE,
+          'default' => 'VIC'
+        ),
+        'phone' => array(
+          'description' => t('The supervisors mobile/work phone number.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+      ),
+      'primary key' => array('uid'),
+    );
+  }
+
+  function _urop_get_course_table() {
+    return array(
+      'description' => t('The list of university degrees that students can select from.'),
+      'fields' => array(
+        'cid' => array(
+          'description' => t('The primary identifier for a degree'),
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'description' => array(
+          'description' => t('The degree description that will be shown to students.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''),
+      ),
+      'primary key' => array('cid'),
+    );
+  }
+
+  function _urop_get_student_details_table() {
+    return array(
+      'description' => t('The table of student details'),
+      'fields' => array(
+        'uid' => array(
+          'description' => t('The {users}.uid associated with this student'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'family_name' => array(
+          'description' => t('The students family name.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'given_name' => array(
+          'description' => t('The students given name.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'preferred_name' => array(
+          'description' => t('The students preferred name.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'gender' => array(
+          'description' => t('The students gender. Either "M" (male) or "F" (female).'),
+          'type' => 'varchar',
+          'length' => 1,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'international' => array(
+          'description' => t('If the student is a local or an international student. Either "L" (local) or "I" (international).'),
+          'type' => 'varchar',
+          'length' => 1,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'address_line_1' => array(
+          'description' => t('The first line of the students contact address.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'address_line_2' => array(
+          'description' => t('The second line of the students contact address.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'city' => array(
+          'description' => t('The city/suburb of the students contact address.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'postcode' => array(
+          'description' => t('The postcode associated with the students contact address.'),
+          'type' => 'varchar',
+          'length' => 5,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'state' => array(
+          'description' => t('The state of the students contact address.'),
+          'type' => 'varchar',
+          'length' => 3,
+          'not null' => TRUE,
+          'default' => 'VIC'
+        ),
+        'phone' => array(
+          'description' => t('The students mobile/phone number.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'dob' => array(
+          'description' => t('The students date of birth.'),
+          'type' => 'datetime',
+          'not null' => TRUE,
+          'default' => '2011-08-17 00:00:00',
+        ),
+        'status' => array(
+          'description' => t('The students status in the UROP program. One of (new | prior | applicant | interview | current | graduate)'),
+          'type' => 'varchar',
+          'length' => 10,
+          'not null' => TRUE,
+          'default' => 'new'
+        ),
+      ),
+      'primary key' => array('uid'),
+    );
+  }
+
+  function _urop_get_state_changes_table() {
+    return array(
+      'description' => t('The table of UROP applicant state changes.'),
+      'fields' => array(
+        'nid' => array(
+          'description' => t('The primary identifier for a change.'),
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'uid' => array(
+          'description' => t('The {users}.uid associated with this change.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'date' => array(
+          'description' => t('The date and time of the change.'),
+          'type' => 'datetime',
+          'not null' => TRUE,
+          'default' => '2011-08-17 00:00:00',
+        ),
+        'note' => array(
+          'description' => t('A note associated with the change (if any).'),
+          'type' => 'blob',
+        ),
+        'action' => array(
+          'description' => t('The admin action assoicated with the change (accept | reject | skip).'),
+          'type' => 'varchar',
+          'length' => 6,
+          'not null' => TRUE,
+          'default' => 'skip'
+        ),
+        'status' => array(
+          'description' => t('The students status in the UROP program before this state change. One of (new | prior | applicant | interview | current | graduate)'),
+          'type' => 'varchar',
+          'length' => 10,
+          'not null' => TRUE,
+          'default' => 'new'
+        ),
+        'new_status' => array(
+          'description' => t('The students status in the UROP program after this state change. One of (new | prior | applicant | interview | current | graduate)'),
+          'type' => 'varchar',
+          'length' => 10,
+          'not null' => TRUE,
+          'default' => 'new'
+        ),
+      ),
+      'primary key' => array('nid'),
+    );
+  }
+
+  function _urop_get_student_university_table() {
+    return array(
+      'description' => t('The table of universities that students are at and the courses that they are studying.'),
+      'fields' => array(
+        'uid' => array(
+          'description' => t('The {users}.uid associated with this course.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'university' => array(
+          'description' => t('The university the student is currently attending.'),
+          'type' => 'varchar',
+          'length' => 10,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'course' => array(
+          'description' => t('The course selected from the {university_courses}.cid.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => FALSE, // if not set then we expect the course_other field to have a value
+        ),
+        'course_other' => array(
+          'description' => t('If "other" is selected then this will contain the entered value'),
+          'type' => 'varchar',
+          'length' => 50,
+          'default' => '',
+          'not null' => FALSE, // if set, then we expect the course field to not have a value.
+        ),
+        'course_start_year' => array(
+          'description' => t('The start year of the course.'),
+          'type' => 'varchar',
+          'length' => 4,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'course_end_year' => array(
+          'description' => t('The expected end year of the course.'),
+          'type' => 'varchar',
+          'length' => 4,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'course_average' => array(
+          'description' => t('The average for the course (calculated: based on results).'),
+          'type' => 'varchar',
+          'length' => 3,
+          'default' => '0'
+        ),
+        'dip_name' => array(
+          'description' => t('The name of any diploma the student might be studying for.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'dip_start_year' => array(
+          'description' => t('The start year of the diploma.'),
+          'type' => 'varchar',
+          'length' => 4,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'dip_end_year' => array(
+          'description' => t('The expected end year of the diploma.'),
+          'type' => 'varchar',
+          'length' => 4,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'dip_average' => array(
+          'description' => t('The average for the diploma (calculated: based on results).'),
+          'type' => 'varchar',
+          'length' => 3,
+          'default' => '0'
+        ),
+        'previous_name' => array(
+          'description' => t('Any previous university.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'international_course' => array(
+          'description' => t('The courses studied at the previous university.'),
+          'type' => 'varchar',
+          'length' => 50,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+      ),
+      'primary key' => array('uid'),
+    );
+  }
+
+  function _urop_get_results_table() {
+    return array(
+      'description' => t('The results that students are reporting.'),
+      'fields' => array(
+        'rid' => array(
+          'description' => t('The primary identifier for a row in this table'),
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE),
+        'uid' => array(
+          'description' => t('The {users}.uid associated with this result.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE),
+        // I wonder if we should have three different tables, one for each type...
+        'type' => array(
+          'description' => t('Whether a University, Diploma or an International institution. One of U, D or I'),
+          'type' => 'char',
+          'length' => 1,
+          'not null' => TRUE),
+        'line_no' => array(
+          'description' => t('The line number used order the students results.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE),
+        'unit_no' => array(
+          'description' => t('The institutions course number for the unit of study.'),
+          'type' => 'varchar',
+          'length' => 9,
+          'non null' => TRUE,
+          'default' => ''),
+        'unit_name' => array(
+          'description' => t('The name of the course.'),
+          'type' => 'varchar',
+          'length' => 45,
+          'not null' => TRUE,
+          'default' => ''),
+        'unit_mark' => array(
+          'description' => t('The result the student got for the course (percentage).'),
+          'type' => 'varchar',
+          'length' => 3,
+          'not null' => TRUE,
+          'default' => '')),
+      'primary key' => array('rid'),
+      'indexes' => array(
+        'uid' => array('uid')));
+  }
+
+
+  //==============================================
+
+  function urop_application_get_student_prizes_table() {
+    return array(
+      'description' => t('The prizes that students have won since leaving the program.'),
+      'fields' => array(
+        'pid' => array(
+          'description' => t('The primary identifier for a row in this table'),
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'uid' => array(
+          'description' => t('The {users}.uid associated with this prize.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'line_no' => array(
+          'description' => t('The line number used order the users prizes.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'prize_name' => array(
+          'description' => t('The name of the prize recieved.'),
+          'type' => 'varchar',
+          'length' => 30,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'prize_uni' => array(
+          'description' => t('The institution that conferred the prize.'),
+          'type' => 'varchar',
+          'length' => 30,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'prize_date' => array(
+          'description' => t('The year the prize was awarded.'),
+          'type' => 'varchar',
+          'length' => 4,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'prize_years' => array(
+          'description' => t('The duration (if any) of the prize.'),
+          'type' => 'varchar',
+          'length' => 2,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'prize_value' => array(
+          'description' => t('The value of the prize.'),
+          'type' => 'varchar',
+          'length' => 8,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+      ),
+      'primary key' => array('pid'),
+      'indexes' => array(
+        'uid' => array('uid'),
+      ),
+    );
+  }
+
+  function urop_application_get_student_publications_table() {
+    return array(
+      'description' => t('A record of publications made by students since leaving the program.'),
+      'fields' => array(
+        'pid' => array(
+          'description' => t('The primary identifier for a row in this table'),
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'uid' => array(
+          'description' => t('The {users}.uid associated with this publication.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'line_no' => array(
+          'description' => t('The line number used to order the users publication.'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'pub_name' => array(
+          'description' => t('The name of the publication.'),
+          'type' => 'varchar',
+          'length' => 30,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'pub_issue' => array(
+          'description' => t('The issue and volume number.'),
+          'type' => 'varchar',
+          'length' => 30,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'pub_title' => array(
+          'description' => t('The title of the article.'),
+          'type' => 'varchar',
+          'length' => 30,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+        'pub_authors' => array(
+          'description' => t('The authors of the article.'),
+          'type' => 'varchar',
+          'length' => 30,
+          'not null' => TRUE,
+          'default' => ''
+        ),
+      ),
+      'primary key' => array('pid'),
+      'indexes' => array(
+        'uid' => array('uid'),
+      ),
+    );
+  }
+
+  function _urop_create_roles() {
+    // Create query parameters
+    $params = _urop_get_roles_by_name();
+    array_unshift($params, 'INSERT INTO {role} (name) VALUES (\'%s\')' . str_repeat(', (\'%s\')', count($params) - 1));
+
+    // add roles to system
+    call_user_func_array('db_query', $params);
+  }
+
+  function _urop_get_roles_by_name() {
+    // Return role information
+    return array(
+      'UROP administrator',
+      'UROP supervisor',
+    );
+  }
+
+  function _urop_remove_roles() {
+    // Create query parameters
+    $params = _urop_get_roles_by_id();
+    $num_roles = count($params) - 1;
+    array_unshift($params, TRUE);
+
+    $query_set = array(
+      'DELETE FROM {role} WHERE rid = %d' . str_repeat(' || rid = %d', $num_roles),
+      'DELETE FROM {permission} WHERE rid = %d' . str_repeat(' || rid = %d', $num_roles),
+      'DELETE FROM {users_roles} WHERE rid = %d' . str_repeat(' || rid = %d', $num_roles),
+    );
+
+    // Perform queries to remove role data
+    while ($query = array_shift($query_set)) {
+      $params [0] = $query;
+      call_user_func_array('db_query', $params);
+    }
+  }
+
+  function _urop_get_roles_by_id() {
+    // Create query parameters
+    $params = _urop_get_roles_by_name();
+    array_unshift($params, 'SELECT rid FROM {role} WHERE name = \'%s\'' . str_repeat(' || name = \'%s\'', count($params) - 1));
+
+    // retrieve roles from system
+    $result = call_user_func_array('db_query', $params);
+    $role = array();
+
+    while ($row = db_fetch_array($result)) {
+      $role[] = $row ['rid'];
+    }
+
+    return $role;
+  }
+
+  function urop_application_update_6101(&$sandbox) {
+    $return = array();
+    db_change_field($return, 'urop_results', 'unit_no', 'unit_no', array(
+      'description' => t('The institutions course number for the unit of study.'),
+      'type' => 'varchar',
+      'length' => 9,
+      'non null' => TRUE,
+      'default' => ''));
+    return $return;
+  }
+
+  function urop_application_update_6102(&$sandbox) {
+    $return = array();
+    db_change_field($return, 'urop_results', 'unit_name', 'unit_name', array(
+      'description' => t('The name of the course.'),
+      'type' => 'varchar',
+      'length' => 45,
+      'not null' => TRUE,
+      'default' => ''));
+    return $return;
+  }

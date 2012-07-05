@@ -1,0 +1,5 @@
+name = UROP Application
+description = UROP application management
+core = 6.x
+package = VeRSI provided
+dependencies[] = multicrud
